@@ -18,4 +18,5 @@ Total Number of Cores: 10 (8 performance and 2 efficiency)
 Memory: 32 GB
 
 Results:
-took 13.077398042s
+1 Goroutine: took 1m18.318s
+10 Goroutines: took 13.077s
