@@ -40,32 +40,31 @@ func main() {
 	defer pprof.StopCPUProfile()
 
 	t0 := time.Now()
-	Run()
+	run()
 	fmt.Printf("took %s\n", time.Now().Sub(t0))
 }
 
-func Run() {
+func run() {
 
-	f, err := os.Open("./data/measurements.txt")
-	if err != nil {
-		panic(err)
-	}
-
-	stat, err := f.Stat()
-	if err != nil {
-		panic(err)
-	}
-	size := stat.Size()
-	data := make([]byte, size)
-	n, err := io.ReadFull(f, data)
-	if err != nil {
-		panic(err)
-	}
-	if n != int(size) {
-		panic("n != size")
-	}
+	data := readData()
 
 	workers := runtime.GOMAXPROCS(0)
+
+	results := mapScan(data, scan, workers)
+
+	mergedResults := reduce(results...)
+
+	writeResultsToFile(mergedResults)
+
+}
+
+func mapScan(
+	data []byte,
+	scanFunc func(data []byte, i int, end int) map[string]Agg,
+	workers int,
+) []map[string]Agg {
+
+	n := len(data)
 	fmt.Printf("%d CPUs\n", workers)
 	shift := n / workers
 
@@ -81,21 +80,13 @@ func Run() {
 			if i == workers-1 {
 				to = n
 			}
-			res := scan(data, from, to)
+			res := scanFunc(data, from, to)
 			results[i] = res
 		}()
 	}
 	wg.Wait()
 
-	aggregated := reduce(results...)
-
-	resF, err := os.Create("result.txt")
-	if err != nil {
-		panic(err)
-	}
-	defer resF.Close()
-
-	printResults(aggregated, resF)
+	return results
 }
 
 func scan(data []byte, i int, end int) map[string]Agg {
@@ -259,4 +250,35 @@ L:
 		out[string(key[:])] = m1[key]
 	}
 	return out
+}
+
+func readData() []byte {
+	f, err := os.Open("./data/measurements.txt")
+	if err != nil {
+		panic(err)
+	}
+
+	stat, err := f.Stat()
+	if err != nil {
+		panic(err)
+	}
+	size := stat.Size()
+	data := make([]byte, size)
+	n, err := io.ReadFull(f, data)
+	if err != nil {
+		panic(err)
+	}
+	if n != int(size) {
+		panic("n != size")
+	}
+	return data
+}
+
+func writeResultsToFile(results map[string]Agg) {
+	resF, err := os.Create("result.txt")
+	if err != nil {
+		panic(err)
+	}
+	defer resF.Close()
+	printResults(results, resF)
 }
