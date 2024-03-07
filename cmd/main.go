@@ -58,37 +58,7 @@ func run() {
 
 }
 
-func mapScan(
-	data []byte,
-	scanFunc func(data []byte, i int, end int) map[string]Agg,
-	workers int,
-) []map[string]Agg {
-
-	n := len(data)
-	fmt.Printf("%d CPUs\n", workers)
-	shift := n / workers
-
-	results := make([]map[string]Agg, workers)
-	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		i := i
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			from := i * shift
-			to := i*shift + shift
-			if i == workers-1 {
-				to = n
-			}
-			res := scanFunc(data, from, to)
-			results[i] = res
-		}()
-	}
-	wg.Wait()
-
-	return results
-}
-
+// scan reads chunk of data without extra allocations
 func scan(data []byte, i int, end int) map[string]Agg {
 	m := make(map[[keySize]byte]Agg, 0)
 	var (
@@ -155,6 +125,39 @@ func scan(data []byte, i int, end int) map[string]Agg {
 	return fixMap(m)
 }
 
+// mapScan splits data to chunks and run scanning in goroutines
+func mapScan(
+	data []byte,
+	scanFunc func(data []byte, i int, end int) map[string]Agg,
+	workers int,
+) []map[string]Agg {
+
+	n := len(data)
+	fmt.Printf("%d CPUs\n", workers)
+	shift := n / workers
+
+	results := make([]map[string]Agg, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		i := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			from := i * shift
+			to := i*shift + shift
+			if i == workers-1 {
+				to = n
+			}
+			res := scanFunc(data, from, to)
+			results[i] = res
+		}()
+	}
+	wg.Wait()
+
+	return results
+}
+
+// reduce merges chunks results together
 func reduce(data ...map[string]Agg) map[string]Agg {
 	out := data[0]
 	for i := 1; i < len(data); i++ {
@@ -176,6 +179,7 @@ func reduce(data ...map[string]Agg) map[string]Agg {
 	return out
 }
 
+// fastFloat parses slice of bytes into float64 without conversion to string
 func fastFloat(b []byte) float64 {
 	var sign float64 = 1
 	var result float64
@@ -213,30 +217,11 @@ func fastFloat(b []byte) float64 {
 
 }
 
-func printResults(data map[string]Agg, w io.Writer) {
-	var keys = make([]string, 0, len(data))
-	for key, _ := range data {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+// ---
+// NOT SIGNIFICANT FUNCTIONS BELOW (helpers for read and simple conversions)
+// ---
 
-	w.Write([]byte{'{'})
-
-	var res string
-	for _, key := range keys[:len(keys)-1] {
-		v := data[key]
-		res = fmt.Sprintf("%s=%.1f/%.1f/%.1f, ", key, v.min, v.sum/float64(v.count), v.max)
-		w.Write([]byte(res))
-	}
-
-	key := keys[len(keys)-1]
-	v := data[key]
-	res = fmt.Sprintf("%s=%.1f/%.1f/%.1f", key, v.min, v.sum/float64(v.count), v.max)
-	w.Write([]byte(res))
-
-	w.Write([]byte{'}'})
-}
-
+// fixMap converts map from [keySize]int keyed into `string` keyed
 func fixMap(m1 map[[keySize]byte]Agg) map[string]Agg {
 	out := make(map[string]Agg, len(m1))
 L:
@@ -252,6 +237,9 @@ L:
 	return out
 }
 
+// readData reads data from ./data/measurements.txt file
+// Data can be generated via tools in
+// https://github.com/gunnarmorling/1brc repository
 func readData() []byte {
 	f, err := os.Open("./data/measurements.txt")
 	if err != nil {
@@ -281,4 +269,28 @@ func writeResultsToFile(results map[string]Agg) {
 	}
 	defer resF.Close()
 	printResults(results, resF)
+}
+
+func printResults(data map[string]Agg, w io.Writer) {
+	var keys = make([]string, 0, len(data))
+	for key, _ := range data {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	w.Write([]byte{'{'})
+
+	var res string
+	for _, key := range keys[:len(keys)-1] {
+		v := data[key]
+		res = fmt.Sprintf("%s=%.1f/%.1f/%.1f, ", key, v.min, v.sum/float64(v.count), v.max)
+		w.Write([]byte(res))
+	}
+
+	key := keys[len(keys)-1]
+	v := data[key]
+	res = fmt.Sprintf("%s=%.1f/%.1f/%.1f", key, v.min, v.sum/float64(v.count), v.max)
+	w.Write([]byte(res))
+
+	w.Write([]byte{'}'})
 }
