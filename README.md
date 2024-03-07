@@ -13,10 +13,11 @@ Optimisations:
 
 Machine:
 
-Chip: Apple M1 Max
-Total Number of Cores: 10 (8 performance and 2 efficiency)
-Memory: 32 GB
+- Chip: Apple M1 Max
+- Total Number of Cores: 10 (8 performance and 2 efficiency)
+- Memory: 32 GB
 
 Results:
-1 Goroutine: took 1m18.318s
-10 Goroutines: took 13.077s
+
+- 1 Goroutine: took 1m18.318s
+- 10 Goroutines: took 13.077s
